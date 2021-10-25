@@ -1,4 +1,4 @@
-import { AppShell, KPI, Link, PageHeader, PairIcon } from "app/components";
+import { AppShell, KPI, Link, Loading, PageHeader, PairIcon } from "app/components";
 import {
   Avatar,
   Box,
@@ -65,12 +65,11 @@ function UserPage() {
   const router = useRouter();
 
   if (router.isFallback) {
-    return <AppShell />;
+    return <Loading />;
   }
-
   const classes = useStyles();
 
-  const id = router.query.id.toLowerCase();
+  const id = router && router.query && router.query.id && router.query.id.toLowerCase();
 
   const {
     data: { bundles },
@@ -96,15 +95,6 @@ function UserPage() {
     },
   });
 
-  const { data: lockupData } = useQuery(lockupUserQuery, {
-    variables: {
-      address: id.toLowerCase(),
-    },
-    context: {
-      clientName: "lockup",
-    },
-  });
-
   const {
     data: { token },
   } = useQuery(tokenQuery, {
@@ -121,7 +111,8 @@ function UserPage() {
     (user) =>
       user.pool &&
       !POOL_DENY.includes(user.pool.id) &&
-      user.pool.allocPoint !== "0"
+      user.pool.allocPoint !== "0" &&
+      pairs.find((pair) => pair?.id === user.pool.pair)
   );
 
   // useInterval(
@@ -209,8 +200,6 @@ function UserPage() {
       );
     }, 0) * sushiPrice;
 
-  // console.log({ barData, poolData });
-
   const [
     poolEntriesUSD,
     poolExitsUSD,
@@ -227,39 +216,13 @@ function UserPage() {
     [0, 0, 0]
   );
 
-  const lockedUSD = poolData?.users.reduce((previousValue, user) => {
-    const pendingSushi =
-      ((user.amount * user.pool.accSushiPerShare) / 1e12 - user.rewardDebt) /
-      1e18;
-
-    const lockupUser = lockupData?.users.find(
-      (u) => u.pool.id === user.pool.id
-    );
-
-    const sushiAtLockup = lockupUser
-      ? ((lockupUser.amount * lockupUser.pool.accSushiPerShare) / 1e12 -
-          lockupUser.rewardDebt) /
-        1e18
-      : 0;
-
-    const sushiLocked =
-      (parseFloat(user.sushiHarvestedSinceLockup) +
-        pendingSushi -
-        sushiAtLockup) *
-      2;
-
-    const sushiLockedUSD = sushiLocked * sushiPrice;
-
-    return previousValue + sushiLockedUSD;
-  }, 0);
-
   // Global
 
   // const originalInvestments =
   //   parseFloat(barData?.user?.sushiStakedUSD) + parseFloat(poolEntriesUSD);
 
   const investments =
-    poolEntriesUSD + barPendingUSD + poolsPendingUSD + poolExitsUSD + lockedUSD;
+    poolEntriesUSD + barPendingUSD + poolsPendingUSD + poolExitsUSD;
 
   return (
     <AppShell>
@@ -433,14 +396,11 @@ function UserPage() {
               <Grid item xs>
                 <KPI
                   title="Value"
-                  value={formatCurrency(poolsUSD + poolsPendingUSD + lockedUSD)}
+                  value={formatCurrency(poolsUSD + poolsPendingUSD)}
                 />
               </Grid>
               <Grid item xs>
                 <KPI title="Invested" value={formatCurrency(poolEntriesUSD)} />
-              </Grid>
-              <Grid item xs>
-                <KPI title="Locked" value={formatCurrency(lockedUSD)} />
               </Grid>
               <Grid item xs>
                 <KPI
@@ -484,9 +444,6 @@ function UserPage() {
                     <TableCell key="sushiHarvested" align="right">
                       Sushi Harvested
                     </TableCell>
-                    <TableCell key="sushiLocked" align="right">
-                      Sushi Locked
-                    </TableCell>
                     <TableCell key="pl" align="right">
                       Profit/Loss
                     </TableCell>
@@ -520,25 +477,6 @@ function UserPage() {
                     //   pendingSushi * sushiPrice
                     // );
 
-                    const lockupUser = lockupData?.users.find(
-                      (u) => u.pool.id === user.pool.id
-                    );
-
-                    const sushiAtLockup = lockupUser
-                      ? ((lockupUser.amount *
-                          lockupUser.pool.accSushiPerShare) /
-                          1e12 -
-                          lockupUser.rewardDebt) /
-                        1e18
-                      : 0;
-
-                    const sushiLocked =
-                      (parseFloat(user.sushiHarvestedSinceLockup) +
-                        pendingSushi -
-                        sushiAtLockup) *
-                      2;
-
-                    const sushiLockedUSD = sushiLocked * sushiPrice;
                     return (
                       <TableRow key={user.pool.id}>
                         <TableCell component="th" scope="row">
@@ -601,12 +539,6 @@ function UserPage() {
                         </TableCell>
                         <TableCell align="right">
                           <Typography noWrap variant="body2">
-                            {decimalFormatter.format(sushiLocked)} (
-                            {currencyFormatter.format(sushiLockedUSD)})
-                          </Typography>
-                        </TableCell>
-                        <TableCell align="right">
-                          <Typography noWrap variant="body2">
                             {currencyFormatter.format(
                               parseFloat(pair.reserveUSD * share) +
                                 parseFloat(user.exitUSD) +
@@ -640,16 +572,6 @@ export async function getStaticProps({ params }) {
   await getSushiToken(client);
 
   await getBarUser(id.toLowerCase(), client);
-
-  await client.query({
-    query: lockupUserQuery,
-    variables: {
-      address: id.toLowerCase(),
-    },
-    context: {
-      clientName: "lockup",
-    },
-  });
 
   await getPoolUser(id.toLowerCase(), client);
 
